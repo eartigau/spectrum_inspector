@@ -71,9 +71,24 @@ You need **THREE** files in the same folder as the script:
 
 | File | What it is | Where to get it |
 |------|-----------|-----------------|
-| `YOUR_SPECTRUM.fits` | Your NIRPS/SPIROU observation | From your data reduction |
+| `*t.fits` | **APERO telluric-corrected spectrum** | From APERO reduction |
 | `Template_s1dv_OBJECTNAME_sc1d_v_file_A.fits` | Template spectrum | From LBL reduction |
 | `tapas_lbl.fits` | Atmospheric transmission | See Installation Step 3 |
+
+### ⚠️ CRITICAL: You MUST use APERO `t.fits` files!
+
+This script **ONLY** works with **APERO telluric-corrected** files. These are the files whose names end with **`t.fits`**:
+
+```
+✅ CORRECT:   NIRPS.2024-09-28T23:54:06.014t.fits   (the 't' = telluric-corrected)
+❌ WRONG:     NIRPS.2024-09-28T23:54:06.014e.fits   (extracted, NOT telluric-corrected)
+❌ WRONG:     NIRPS.2024-09-28T23:54:06.014o.fits   (NOT telluric-corrected)
+❌ WRONG:     NIRPS.2024-09-28T23:54:06.014.fits    (missing the 't')
+```
+
+The **`t.fits`** files are produced by APERO after telluric correction. They contain the multi-extension structure with `FluxA`, `BlazeA`, `WaveA` (for NIRPS) or `FluxAB`, `BlazeAB`, `WaveAB` (for SPIROU).
+
+**If you use the wrong file type, you will get an error message.**
 
 ---
 

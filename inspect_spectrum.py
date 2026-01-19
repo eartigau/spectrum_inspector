@@ -551,6 +551,30 @@ if __name__ == '__main__':
         print(f"Error: Input file '{args.file}' not found.")
         exit(1)
     
+    # Check that the file is an APERO t.fits file
+    if not args.file.endswith('t.fits'):
+        print(f"""\n{'='*70}
+ERROR: Invalid file type!
+{'='*70}
+
+You provided: {args.file}
+
+This script ONLY works with APERO telluric-corrected files (t.fits).
+
+The file name MUST end with 't.fits', for example:
+  - NIRPS.2024-09-28T23:54:06.014t.fits  ← CORRECT (telluric-corrected)
+  - NIRPS.2024-09-28T23:54:06.014e.fits  ← WRONG (extracted, not telluric-corrected)
+  - NIRPS.2024-09-28T23:54:06.014o.fits  ← WRONG (not telluric-corrected)
+
+The 't' stands for 'telluric-corrected'. These files are produced by
+APERO after telluric correction and contain the extensions:
+  - FluxA, BlazeA, WaveA (for NIRPS)
+  - FluxAB, BlazeAB, WaveAB (for SPIROU)
+
+Please use the correct t.fits file from your APERO reduction.
+{'='*70}\n""")
+        exit(1)
+    
     # Auto-detect template if not provided
     if args.template is None:
         try:
