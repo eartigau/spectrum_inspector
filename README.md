@@ -2,6 +2,40 @@
 
 A simple tool to visually inspect NIRPS and SPIROU spectra order-by-order, comparing observations with templates and atmospheric transmission.
 
+![Sample plot of Order 35](sample_order35.png)
+*Example: Order 35 of TOI-4552 showing oxygen airglow fluorescence contamination in the residuals. This is the kind of artifact you should look for!*
+
+---
+
+## 📥 Installation
+
+### Step 1: Download the code
+
+```bash
+git clone https://github.com/eartigau/spectrum_inspector.git
+cd spectrum_inspector
+```
+
+Or if you don't have git, download the ZIP from: https://github.com/eartigau/spectrum_inspector/archive/refs/heads/main.zip
+
+### Step 2: Install Python dependencies
+
+```bash
+pip install numpy matplotlib astropy scipy
+```
+
+Or with conda:
+```bash
+conda install numpy matplotlib astropy scipy
+```
+
+### Step 3: Copy the TAPAS file
+
+```bash
+# Adjust the path to YOUR lbl installation
+cp /path/to/your/lbl/models/tapas_lbl.fits .
+```
+
 ---
 
 ## 📋 What This Tool Does
@@ -39,28 +73,11 @@ You need **THREE** files in the same folder as the script:
 |------|-----------|-----------------|
 | `YOUR_SPECTRUM.fits` | Your NIRPS/SPIROU observation | From your data reduction |
 | `Template_s1dv_OBJECTNAME_sc1d_v_file_A.fits` | Template spectrum | From LBL reduction |
-| `tapas_lbl.fits` | Atmospheric transmission | Copy from your LBL `models/` folder |
-
-### ⚠️ IMPORTANT: Getting `tapas_lbl.fits`
-
-The `tapas_lbl.fits` file is **NOT** included in this repo. You must copy it yourself:
-
-```bash
-# Example - adjust the path to YOUR lbl installation
-cp /path/to/your/lbl/models/tapas_lbl.fits .
-```
-
-If you don't have it, the script will tell you:
-```
-Error: TAPAS file 'tapas_lbl.fits' not found.
-Please copy 'tapas_lbl.fits' from your LBL 'models/' folder to this directory.
-```
+| `tapas_lbl.fits` | Atmospheric transmission | See Installation Step 3 |
 
 ---
 
 ## 📖 Usage Examples
-
-### Example 1: Generate PDF for ALL orders (most common use)
 
 ```bash
 python inspect_spectrum.py NIRPS.2024-09-28T23:54:06.014t.fits
@@ -127,23 +144,7 @@ python inspect_spectrum.py SPIROU_spectrum.fits --instrument SPIROU
 
 ---
 
-## 🐍 Python Dependencies
-
-Install these if you don't have them:
-
-```bash
-pip install numpy matplotlib astropy scipy
-```
-
-Or with conda:
-
-```bash
-conda install numpy matplotlib astropy scipy
-```
-
----
-
-## 📊 Understanding the Plots
+##  Understanding the Plots
 
 ### Page 1: Summary Page
 Contains all the key observation metadata:
