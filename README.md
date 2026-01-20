@@ -21,6 +21,11 @@ Or if you don't have git, download the ZIP from: https://github.com/eartigau/spe
 ### Step 2: Install Python dependencies
 
 ```bash
+pip install -r requirements.txt
+```
+
+Or install manually:
+```bash
 pip install numpy matplotlib astropy scipy
 ```
 
@@ -29,12 +34,38 @@ Or with conda:
 conda install numpy matplotlib astropy scipy
 ```
 
-### Step 3: Copy the TAPAS file
+### Step 3: TAPAS file (automatic download)
+
+The TAPAS atmospheric transmission file is **automatically downloaded** to a `reference_data/` subfolder the first time you run the script.
+
+**Note for clarity:** The script keeps auxiliary reference files (TAPAS atmospheric data and OH emission lines) separate from your actual data files in a `reference_data/` folder. This keeps your working directory clean.
+
+**Alternative:** If the automatic download fails (online storage temporarily unavailable), you can manually copy the file:
 
 ```bash
+# Create the folder if it doesn't exist
+mkdir -p reference_data
+
 # Adjust the path to YOUR lbl installation
-cp /path/to/your/lbl/models/tapas_lbl.fits .
+cp /path/to/your/lbl/models/tapas_lbl.fits reference_data/
 ```
+
+### 📁 Folder Structure (after first run)
+
+```
+your_working_directory/
+├── inspect_spectrum.py          ← The main script
+├── requirements.txt             ← Python dependencies
+├── README.md
+├── reference_data/              ← Auto-created folder for reference files
+│   ├── tapas_lbl.fits          ← TAPAS atmospheric data (auto-downloaded, ~172 MB)
+│   └── tablea1.dat             ← OH emission lines (auto-downloaded, small)
+├── YOUR_SPECTRUM.fits           ← Your APERO t.fits file
+├── Template_OBJECTNAME.fits     ← Your template from LBL
+└── OUTPUT_PDFS.pdf              ← Generated plots
+```
+
+**Important:** Keep your actual data files (spectra, templates, PDFs) in the main folder. The `reference_data/` folder is only for the automatically downloaded reference files.
 
 ---
 
@@ -67,13 +98,14 @@ That's it! The script will:
 
 ## 📦 Required Files
 
-You need **THREE** files in the same folder as the script:
+You need **TWO** files in the same folder as the script:
 
 | File | What it is | Where to get it |
 |------|-----------|-----------------|
 | `*t.fits` | **APERO telluric-corrected spectrum** | From APERO reduction |
 | `Template_s1dv_OBJECTNAME_sc1d_v_file_A.fits` | Template spectrum | From LBL reduction |
-| `tapas_lbl.fits` | Atmospheric transmission | See Installation Step 3 |
+
+**Note:** The `tapas_lbl.fits` file (atmospheric transmission) is **automatically downloaded** on first use. If the download fails, you can manually copy it from your LBL installation (see Step 3 above).
 
 ### ⚠️ CRITICAL: You MUST use APERO `t.fits` files!
 
@@ -197,12 +229,25 @@ The script couldn't find a template matching your object. Either:
 1. Provide the template explicitly as the second argument
 2. Make sure your template file is named `Template_s1dv_OBJECTNAME_sc1d_v_file_A.fits`
 
-### "TAPAS file not found"
+### "TAPAS file not found" or Download Failure
 
-Copy `tapas_lbl.fits` from your LBL installation:
-```bash
-cp /your/lbl/path/models/tapas_lbl.fits .
-```
+The script automatically downloads the TAPAS file to `reference_data/tapas_lbl.fits` on first use. If the download fails:
+
+1. **Online storage may be temporarily unavailable** - the script will inform you if this happens
+2. **Manual solution:** Copy `tapas_lbl.fits` from your LBL installation:
+   ```bash
+   mkdir -p reference_data
+   cp /your/lbl/path/models/tapas_lbl.fits reference_data/
+   ```
+3. **Direct download:** You can manually download from:
+   ```bash
+   mkdir -p reference_data
+   cd reference_data
+   wget http://206.12.93.77/ari/data/lbl/tapas/tapas_lbl.fits
+   cd ..
+   ```
+
+The file is ~172 MB and only needs to be downloaded once.
 
 ### "Order X has no valid data"
 

@@ -1,3 +1,13 @@
+# Data files (spectra, templates, output PDFs)
 *.fits
 *.pdf
-tablea1.dat
+
+# Reference data folder (automatically downloaded)
+reference_data/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store

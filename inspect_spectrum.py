@@ -27,12 +27,16 @@ def doppler(wave, velocity):
 
 def get_oh_lines(wave_min, wave_max):
     """Download and return OH emission lines in the specified range."""
-    url = 'https://cdsarc.cds.unistra.fr/ftp/J/A+A/581/A47/table1.dat'
-    if not os.path.exists('tablea1.dat'):
-        import urllib.request
-        urllib.request.urlretrieve(url, 'tablea1.dat')
+    # Store OH data in reference_data folder
+    os.makedirs('reference_data', exist_ok=True)
+    oh_file = 'reference_data/tablea1.dat'
     
-    oh_lines = Table.read('tablea1.dat', format='ascii')
+    url = 'https://cdsarc.cds.unistra.fr/ftp/J/A+A/581/A47/table1.dat'
+    if not os.path.exists(oh_file):
+        import urllib.request
+        urllib.request.urlretrieve(url, oh_file)
+    
+    oh_lines = Table.read(oh_file, format='ascii')
     wave_oh = np.concatenate([
         np.array(oh_lines['col1'].data),
         np.array(oh_lines['col3'].data)
@@ -46,10 +50,38 @@ def get_oh_lines(wave_min, wave_max):
 def load_tapas(tapas_file):
     """Load TAPAS atmospheric transmission data."""
     if not os.path.exists(tapas_file):
-        raise FileNotFoundError(
-            f"TAPAS file '{tapas_file}' not found.\n"
-            f"Please copy 'tapas_lbl.fits' from your LBL 'models/' folder to this directory."
-        )
+        # Try to download from default URL
+        # Ensure reference_data folder exists
+        os.makedirs('reference_data', exist_ok=True)
+        
+        url = 'http://206.12.93.77/ari/data/lbl/tapas/tapas_lbl.fits'
+        print(f"TAPAS file '{tapas_file}' not found locally.")
+        print(f"Attempting to download from: {url}")
+        
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(url, tapas_file)
+            
+            # Verify the file was actually downloaded and is valid
+            if os.path.exists(tapas_file):
+                file_size = os.path.getsize(tapas_file)
+                if file_size < 1000:  # Less than 1KB is suspicious
+                    os.remove(tapas_file)
+                    raise ValueError(f"Downloaded file is too small ({file_size} bytes). Download may have failed.")
+                print(f"✓ Successfully downloaded tapas_lbl.fits ({file_size / (1024*1024):.1f} MB)")
+            else:
+                raise FileNotFoundError("Download completed but file not found.")
+                
+        except Exception as e:
+            raise FileNotFoundError(
+                f"Failed to download TAPAS file from {url}\n"
+                f"Error: {e}\n\n"
+                f"The online storage may be temporarily unavailable.\n"
+                f"Please try:\n"
+                f"  1. Copy 'tapas_lbl.fits' from your LBL 'models/' folder to this directory\n"
+                f"  2. Contact the maintainer if the problem persists"
+            )
+    
     return Table.read(tapas_file)
 
 
@@ -317,7 +349,7 @@ def create_summary_page(spectrum_data, template_file, fits_file, order_min, orde
     return fig
 
 
-def inspect_all_orders(fits_file, template_file, tapas_file='tapas_lbl.fits',
+def inspect_all_orders(fits_file, template_file, tapas_file='reference_data/tapas_lbl.fits',
                        instrument='NIRPS', order_min=None, order_max=None,
                        show_oh=True, show_tapas=True):
     """
@@ -406,7 +438,7 @@ def inspect_all_orders(fits_file, template_file, tapas_file='tapas_lbl.fits',
     return pdf_path
 
 
-def inspect_single_order(fits_file, template_file, order, tapas_file='tapas_lbl.fits',
+def inspect_single_order(fits_file, template_file, order, tapas_file='reference_data/tapas_lbl.fits',
                          instrument='NIRPS', show_oh=True, show_tapas=True,
                          save_pdf=True, show=True):
     """
@@ -533,7 +565,7 @@ if __name__ == '__main__':
     parser.add_argument('file', help='Input FITS file (e.g., NIRPS.2024-09-28T23:54:06.014t.fits)')
     parser.add_argument('template', nargs='?', default=None,
                         help='Template spectrum file (optional, will auto-detect if not provided)')
-    parser.add_argument('--tapas', default='tapas_lbl.fits',
+    parser.add_argument('--tapas', default='reference_data/tapas_lbl.fits',
                         help='TAPAS transmission file')
     parser.add_argument('--instrument', default='NIRPS', choices=['NIRPS', 'SPIROU'],
                         help='Instrument name')
