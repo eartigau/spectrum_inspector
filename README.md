@@ -1,6 +1,10 @@
 # NIRPS/SPIROU Spectrum Inspector 🔭
 
-A simple tool to visually inspect NIRPS and SPIROU spectra order-by-order, comparing observations with templates and atmospheric transmission.
+Tools to visually inspect and compare NIRPS and SPIROU spectra order-by-order, comparing observations with templates and atmospheric transmission.
+
+**Two scripts included:**
+- **`inspect_spectrum.py`** - Inspect a single spectrum against a template
+- **`compare_spectra.py`** - Compare two spectra from different pipelines (APERO vs ESO)
 
 ![Sample plot of Order 35](sample_order35.png)
 *Example: Order 35 of TOI-4552 showing oxygen airglow fluorescence contamination in the residuals. This is the kind of artifact you should look for!*
@@ -54,13 +58,14 @@ cp /path/to/your/lbl/models/tapas_lbl.fits reference_data/
 
 ```
 your_working_directory/
-├── inspect_spectrum.py          ← The main script
+├── inspect_spectrum.py          ← Single spectrum inspection
+├── compare_spectra.py           ← Cross-pipeline comparison tool
 ├── requirements.txt             ← Python dependencies
 ├── README.md
 ├── reference_data/              ← Auto-created folder for reference files
 │   ├── tapas_lbl.fits          ← TAPAS atmospheric data (auto-downloaded, ~172 MB)
 │   └── tablea1.dat             ← OH emission lines (auto-downloaded, small)
-├── YOUR_SPECTRUM.fits           ← Your APERO t.fits file
+├── YOUR_SPECTRUM.fits           ← Your APERO t.fits or ESO r. file
 ├── Template_OBJECTNAME.fits     ← Your template from LBL
 └── OUTPUT_PDFS.pdf              ← Generated plots
 ```
@@ -69,9 +74,10 @@ your_working_directory/
 
 ---
 
-## 📋 What This Tool Does
+## 📋 What These Tools Do
 
-This script creates PDF plots showing:
+### inspect_spectrum.py
+Creates PDF plots comparing a single spectrum to a template:
 - **Page 1: Summary page** with observation info (BERV, systemic velocity, V_tot, files used, etc.)
 - **Subsequent pages: One spectral order per page** with:
   - **Your observed spectrum** (black) vs **template spectrum** (red)
@@ -79,11 +85,20 @@ This script creates PDF plots showing:
   - **TAPAS atmospheric transmission** (water in blue, other gases in green)
   - **OH sky emission lines** (cyan vertical lines)
 
+### compare_spectra.py
+Creates PDF plots comparing two spectra from different pipelines (e.g., APERO vs ESO):
+- **Page 1: Summary page** with info from both files
+- **Subsequent pages: Three-panel comparison** showing:
+  - **Panel 1:** Both spectra overlaid with template
+  - **Panel 2:** Individual residuals (each spectrum - template)
+  - **Panel 3:** Direct difference between the two spectra
+- **Warning pages** for orders that don't match between pipelines (APERO has 75 orders, ESO has 71)
+
 ---
 
 ## 🚀 Quick Start
 
-### The Simplest Command
+### inspect_spectrum.py - The Simplest Command
 
 ```bash
 python inspect_spectrum.py YOUR_SPECTRUM.fits
@@ -92,7 +107,18 @@ python inspect_spectrum.py YOUR_SPECTRUM.fits
 That's it! The script will:
 1. Auto-detect the template file based on the object name in your FITS header
 2. Generate a multi-page PDF with ALL spectral orders
-3. Save it as `NIRPS_OBJECTNAME_DATE_all_orders.pdf`
+3. Save it as `NIRPS_OBJECTNAME_DATE_TIMESTAMP_all_orders.pdf`
+
+### compare_spectra.py - Compare Two Pipelines
+
+```bash
+python compare_spectra.py APERO_FILE.fits ESO_FILE.fits TEMPLATE.fits
+```
+
+This will:
+1. Load both spectra and match orders by wavelength overlap
+2. Generate a PDF comparing each matched order
+3. Add warning pages for orders that exist in only one file
 
 ---
 
@@ -103,11 +129,21 @@ You need **TWO** files in the same folder as the script:
 | File | What it is | Where to get it |
 |------|-----------|-----------------|
 | `*t.fits` | **APERO telluric-corrected spectrum** | From APERO reduction |
+| `r.*fits` | **ESO pipeline spectrum** | From ESO pipeline (compare_spectra.py only) |
 | `Template_s1dv_OBJECTNAME_sc1d_v_file_A.fits` | Template spectrum | From LBL reduction |
 
 **Note:** The `tapas_lbl.fits` file (atmospheric transmission) is **automatically downloaded** on first use. If the download fails, you can manually copy it from your LBL installation (see Step 3 above).
 
-### ⚠️ CRITICAL: You MUST use APERO `t.fits` files!
+### Supported File Types
+
+| File Type | Pattern | Description |
+|-----------|---------|-------------|
+| **APERO** | `*t.fits` | Telluric-corrected files from APERO pipeline |
+| **ESO** | `r.*fits` | Files from ESO pipeline (starts with `r.`) |
+
+Both scripts auto-detect the file type and handle the different data structures appropriately.
+
+### ⚠️ CRITICAL for inspect_spectrum.py: Use APERO `t.fits` files!
 
 This script **ONLY** works with **APERO telluric-corrected** files. These are the files whose names end with **`t.fits`**:
 
@@ -126,11 +162,13 @@ The **`t.fits`** files are produced by APERO after telluric correction. They con
 
 ## 📖 Usage Examples
 
+### inspect_spectrum.py Examples
+
 ```bash
 python inspect_spectrum.py NIRPS.2024-09-28T23:54:06.014t.fits
 ```
 
-**Output:** `NIRPS_TOI4552_2024-09-28_all_orders.pdf` (one page per order)
+**Output:** `NIRPS_TOI4552_2024-09-28_235406_all_orders.pdf` (one page per order)
 
 ### Example 2: Specify the template explicitly
 

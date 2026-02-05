@@ -25,6 +25,85 @@ def doppler(wave, velocity):
     return wave * np.sqrt((1 - velocity / c) / (1 + velocity / c))
 
 
+def robust_polyfit(x, y, degree=4, sigma_clip=3.0, max_iter=10):
+    """
+    Perform robust polynomial fit with iterative sigma clipping.
+    
+    Parameters
+    ----------
+    x : array
+        Independent variable
+    y : array
+        Dependent variable
+    degree : int
+        Polynomial degree (default 4)
+    sigma_clip : float
+        Number of sigma for outlier rejection (default 3.0)
+    max_iter : int
+        Maximum number of iterations (default 10)
+    
+    Returns
+    -------
+    fit_values : array
+        Polynomial evaluated at x positions
+    """
+    # Start with finite values only
+    mask = np.isfinite(x) & np.isfinite(y)
+    
+    for iteration in range(max_iter):
+        if np.sum(mask) < degree + 1:
+            # Not enough points for fit
+            return np.ones_like(y) * np.nan
+        
+        # Fit polynomial to current valid points
+        coeffs = np.polyfit(x[mask], y[mask], degree)
+        fit = np.polyval(coeffs, x)
+        
+        # Compute residuals and sigma
+        residuals = y - fit
+        sigma = np.nanstd(residuals[mask])
+        
+        if sigma == 0:
+            break
+        
+        # Update mask - reject outliers
+        new_mask = np.isfinite(x) & np.isfinite(y) & (np.abs(residuals) < sigma_clip * sigma)
+        
+        # Check for convergence
+        if np.array_equal(mask, new_mask):
+            break
+        
+        mask = new_mask
+    
+    return fit
+
+
+def get_file_type(fits_file):
+    """
+    Determine if the file is an APERO or ESO file.
+    
+    Parameters
+    ----------
+    fits_file : str
+        Path to the FITS file
+    
+    Returns
+    -------
+    str
+        'APERO' if file ends with 't.fits'
+        'ESO' if file basename starts with 'r.'
+        None if file type cannot be determined
+    """
+    basename = os.path.basename(fits_file)
+    
+    if fits_file.endswith('t.fits'):
+        return 'APERO'
+    elif basename.startswith('r.'):
+        return 'ESO'
+    else:
+        return None
+
+
 def get_oh_lines(wave_min, wave_max):
     """Download and return OH emission lines in the specified range."""
     # Store OH data in reference_data folder
@@ -105,26 +184,61 @@ def load_spectrum(fits_file, instrument='NIRPS'):
     else:
         raise ValueError("Instrument must be either 'NIRPS' or 'SPIROU'.")
     
-    hdr = fits.getheader(fits_file, ext=1)
-    berv = hdr['BERV']
+    file_type = get_file_type(fits_file)
     
-    # Get systemic velocity (target radial velocity)
-    try:
-        syst_vel = hdr['HIERARCH ESO TEL TARG RADVEL']
-    except KeyError:
-        syst_vel = np.nan
+    # ESO files have different header structure - BERV is in primary header
+    if file_type == 'ESO':
+        hdr_primary = fits.getheader(fits_file, ext=0)
+        hdr = fits.getheader(fits_file, ext=1)
+        berv = hdr_primary['ESO QC BERV']
+        # Get systemic velocity from primary header
+        try:
+            syst_vel = hdr_primary['ESO TEL TARG RADVEL']
+        except KeyError:
+            syst_vel = np.nan
+    else:
+        hdr = fits.getheader(fits_file, ext=1)
+        berv = hdr['BERV']
+        # Get systemic velocity (target radial velocity)
+        try:
+            syst_vel = hdr['ESO TEL TARG RADVEL']
+        except KeyError:
+            syst_vel = np.nan
     
-    flux = fits.getdata(fits_file, f'Flux{fiber_setup}')
-    blaze = fits.getdata(fits_file, f'Blaze{fiber_setup}')
-    wave = fits.getdata(fits_file, f'Wave{fiber_setup}')
+    # Load data - different extensions for APERO vs ESO
+    if file_type == 'ESO':
+        # ESO files: SCIDATA for flux, WAVEDATA_VAC_BARY for wavelength
+        # Note: ESO wavelength is already BERV-corrected (rest frame)
+        flux = fits.getdata(fits_file, 'SCIDATA')
+        wave = fits.getdata(fits_file, 'WAVEDATA_VAC_BARY')
+        # ESO wavelength is in Angstroms, convert to nm
+        wave = wave / 10.0
+        # ESO files don't have blaze extension - create unity blaze
+        blaze = np.ones_like(flux)
+        # Flag that wavelength is already in rest frame
+        wave_in_rest_frame = True
+    else:
+        # APERO files: FluxA/FluxAB, WaveA/WaveAB, BlazeA/BlazeAB
+        flux = fits.getdata(fits_file, f'Flux{fiber_setup}')
+        blaze = fits.getdata(fits_file, f'Blaze{fiber_setup}')
+        wave = fits.getdata(fits_file, f'Wave{fiber_setup}')
+        wave_in_rest_frame = False
+    
+    # Convert zeros to NaN - there are no real zeros in spectral data
+    flux[flux == 0] = np.nan
     
     # Normalize blaze
     for iord in range(flux.shape[0]):
         blaze[iord] /= np.nanpercentile(blaze[iord], 95)
     
     # Extract target name and date from header
-    target = hdr.get('OBJECT', 'Unknown')
-    date_obs = hdr.get('DATE-OBS', datetime.now().strftime('%Y-%m-%d'))
+    # For ESO, use primary header; for APERO, use ext=1 header
+    if file_type == 'ESO':
+        target = hdr_primary.get('OBJECT', 'Unknown')
+        date_obs = hdr_primary.get('DATE-OBS', datetime.now().strftime('%Y-%m-%d'))
+    else:
+        target = hdr.get('OBJECT', 'Unknown')
+        date_obs = hdr.get('DATE-OBS', datetime.now().strftime('%Y-%m-%d'))
     
     return {
         'flux': flux,
@@ -138,6 +252,9 @@ def load_spectrum(fits_file, instrument='NIRPS'):
         'instrument': instrument,
         'n_orders': flux.shape[0],
         'fits_file': os.path.basename(fits_file),
+        'file_type': get_file_type(fits_file),
+        'wave_in_rest_frame': wave_in_rest_frame,
+        'needs_blaze_correction': (file_type == 'ESO' and '_BLAZE_' in os.path.basename(fits_file)),
     }
 
 
@@ -171,6 +288,8 @@ def plot_order(spectrum_data, template_interp, order, tapas=None,
     flux = spectrum_data['flux']
     blaze = spectrum_data['blaze']
     berv = spectrum_data['berv']
+    wave_in_rest_frame = spectrum_data.get('wave_in_rest_frame', False)
+    needs_blaze_correction = spectrum_data.get('needs_blaze_correction', False)
     
     # Get wavelength range for this order
     wave_ord = wave[order]
@@ -178,41 +297,85 @@ def plot_order(spectrum_data, template_interp, order, tapas=None,
     # Check if flux is all NaN - skip this order
     if np.all(~np.isfinite(flux[order])):
         return None, None
-    flux_median = np.nanmedian(flux[order])
+    # For APERO files: divide flux by blaze to remove blaze shape
+    # For ESO files: blaze is unity, no effect
+    flux_blaze_corrected = flux[order] / blaze[order]
+    
+    flux_median = np.nanmedian(flux_blaze_corrected)
     if not np.isfinite(flux_median) or flux_median == 0:
         return None, None
     
     # Create figure
     fig, ax = plt.subplots(figsize=(18, 8), nrows=2, sharex=True)
     
-    # Normalize and plot
-    plot_tmp = flux[order] / flux_median
-    template_tmp = template_interp[0](doppler(wave_ord, -berv))
-    template_mask = template_interp[1](doppler(wave_ord, -berv)) > 0.5
+    # Normalize the blaze-corrected flux
+    plot_tmp = flux_blaze_corrected / flux_median
+    
+    # For ESO files, wavelength is already in rest frame (BERV-corrected)
+    # For APERO files, we need to Doppler shift to rest frame
+    if wave_in_rest_frame:
+        template_tmp = template_interp[0](wave_ord)
+        template_mask = template_interp[1](wave_ord) > 0.5
+    else:
+        template_tmp = template_interp[0](doppler(wave_ord, -berv))
+        template_mask = template_interp[1](doppler(wave_ord, -berv)) > 0.5
     template_tmp[~template_mask] = np.nan
 
-    template_tmp *= blaze[order]
+    # Template is already flat - just normalize by median
     template_tmp /= np.nanmedian(template_tmp)
     
-    # Find valid domain (where both flux and template are finite)
-    valid = np.isfinite(plot_tmp) & np.isfinite(template_tmp)
-    if not np.any(valid):
+    # Store original flux for background plot (before blaze correction)
+    plot_tmp_original = None
+    flux_label = 'Normalized Flux'
+    
+    # Apply blaze correction for ESO files with _BLAZE_ in name
+    if needs_blaze_correction:
+        # Compute ratio of observed spectrum to template
+        ratio = plot_tmp / template_tmp
+        
+        # Robust polynomial fit to the ratio
+        blaze_fit = robust_polyfit(wave_ord, ratio, degree=4, sigma_clip=3.0, max_iter=10)
+        
+        # Check if fit succeeded
+        if np.any(np.isfinite(blaze_fit)):
+            # Store original for background plot
+            plot_tmp_original = plot_tmp.copy()
+            
+            # Divide observed spectrum by the fit to match template shape
+            plot_tmp = plot_tmp / blaze_fit
+            
+            # Re-normalize after correction
+            plot_tmp /= np.nanmedian(plot_tmp[np.isfinite(plot_tmp)])
+            
+            # Update label to indicate correction was applied
+            flux_label = 'Normalized Flux (blaze-corrected)'
+    
+    # Find valid domain based on where the normalized flux is finite
+    # Use indices to find first and last valid points (trimming NaN edges)
+    flux_valid = np.isfinite(plot_tmp)
+    if not np.any(flux_valid):
         plt.close(fig)
         return None, None
     
-    valid_wave = wave_ord[valid]
-    wave_min, wave_max = np.min(valid_wave), np.max(valid_wave)
+    valid_indices = np.where(flux_valid)[0]
+    idx_min, idx_max = valid_indices[0], valid_indices[-1]
+    wave_min, wave_max = wave_ord[idx_min], wave_ord[idx_max]
     
-    ax[0].plot(wave_ord, plot_tmp, alpha=0.7, color='black', label='Normalized Flux')
-    ax[0].plot(wave_ord, template_tmp, alpha=0.7, color='red', label='Template')
-    ax[1].plot(wave_ord, plot_tmp - template_tmp, color='orange', label='Residuals')
+    # Plot original (non-corrected) spectrum in background if blaze correction was applied
+    if plot_tmp_original is not None:
+        ax[0].plot(wave_ord, plot_tmp_original, alpha=0.3, color='grey', 
+                   label='Original (uncorrected)', zorder=1, rasterized=True)
+    
+    ax[0].plot(wave_ord, plot_tmp, alpha=0.7, color='black', label=flux_label, zorder=2, rasterized=True)
+    ax[0].plot(wave_ord, template_tmp, alpha=0.7, color='red', label='Template', zorder=3, rasterized=True)
+    ax[1].plot(wave_ord, plot_tmp - template_tmp, color='orange', label='Residuals', rasterized=True)
     
     # Add OH lines (trim to order range)
     if show_oh and wave_oh is not None:
         keep = (wave_oh >= wave_min) & (wave_oh <= wave_max)
         for w, lab in zip(wave_oh[keep], label_oh[keep]):
-            ax[0].axvline(w, color='cyan', alpha=0.7, linewidth=0.8)
-            ax[1].axvline(w, color='cyan', alpha=0.7, linewidth=0.8)
+            ax[0].axvline(w, color='cyan', alpha=1.0, linewidth=1.0)
+            ax[1].axvline(w, color='cyan', alpha=1.0, linewidth=1.0)
             ax[0].text(w, 0.05, lab, rotation=90, verticalalignment='bottom',
                       horizontalalignment='right', fontsize=5, alpha=0.5)
     
@@ -222,16 +385,38 @@ def plot_order(spectrum_data, template_interp, order, tapas=None,
         tapas_trim = tapas[keep]
         if len(tapas_trim) > 0:
             ax[0].plot(tapas_trim['WAVELENGTH'], tapas_trim['ABSO_OTHERS'], 
-                      color='green', alpha=0.5, label='TAPAS Other Gases', linewidth=0.8)
+                      color='green', alpha=0.9, label='TAPAS Other Gases', linewidth=1.0, rasterized=True)
             ax[0].plot(tapas_trim['WAVELENGTH'], tapas_trim['ABSO_WATER'],
-                      color='blue', alpha=0.5, label='TAPAS Water', linewidth=0.8)
+                      color='blue', alpha=0.9, label='TAPAS Water', linewidth=1.0, rasterized=True)
     
     ax[0].legend(loc='upper right', fontsize=8)
     ax[0].set_xlim(wave_min, wave_max)
-    ax[0].set_ylim(bottom=0)
+    
+    # Set y-axis limits for flux plot
+    if plot_tmp_original is not None:
+        # For blaze-corrected ESO data, use 1.2x the 90th percentile of original
+        ymax_flux = 1.2 * np.nanpercentile(plot_tmp_original, 90)
+        ax[0].set_ylim(0, ymax_flux)
+    else:
+        ax[0].set_ylim(bottom=0)
+    
     ax[1].set_xlabel('Wavelength (nm)')
     ax[0].set_ylabel('Normalized Flux')
     ax[1].set_ylabel('Residuals')
+    
+    # Set residual ylim - symmetric and capped at [-0.5, 0.5]
+    residuals = plot_tmp - template_tmp
+    res_valid = residuals[np.isfinite(residuals)]
+    if len(res_valid) > 0:
+        ymin, ymax = np.min(res_valid), np.max(res_valid)
+        # Cap at ±0.5
+        ymin = max(ymin, -0.5)
+        ymax = min(ymax, 0.5)
+        # Force symmetry using mean of absolute values
+        ylim = (np.abs(ymin) + np.abs(ymax)) / 2
+        ax[1].set_ylim(-ylim, ylim)
+    else:
+        ax[1].set_ylim(-0.5, 0.5)
     
     # Title
     title = f"{spectrum_data['instrument']} | {spectrum_data['target']} | {spectrum_data['date_obs']} | Order {order} | {wave_min:.1f}-{wave_max:.1f} nm"
@@ -245,10 +430,14 @@ def plot_order(spectrum_data, template_interp, order, tapas=None,
 
 def generate_pdf_name(spectrum_data, order_min=None, order_max=None):
     """Generate smart PDF filename."""
+    # Format timestamp - replace colons with dashes for filename safety
+    timestamp = spectrum_data['date_obs'].replace(':', '-')
+    
     parts = [
         spectrum_data['instrument'],
+        spectrum_data['file_type'],  # ESO or APERO
         spectrum_data['target'].replace(' ', '_'),
-        spectrum_data['date_obs'].split('T')[0],
+        timestamp,
     ]
     
     if order_min is not None and order_max is not None:
@@ -583,32 +772,49 @@ if __name__ == '__main__':
         print(f"Error: Input file '{args.file}' not found.")
         exit(1)
     
-    # Check that the file is an APERO t.fits file
-    if not args.file.endswith('t.fits'):
+    # Check that the file is a valid APERO or ESO file
+    file_type = get_file_type(args.file)
+    if file_type is None:
         print(f"""\n{'='*70}
 ERROR: Invalid file type!
 {'='*70}
 
 You provided: {args.file}
 
-This script ONLY works with APERO telluric-corrected files (t.fits).
+This script works with two types of files:
 
-The file name MUST end with 't.fits', for example:
-  - NIRPS.2024-09-28T23:54:06.014t.fits  ← CORRECT (telluric-corrected)
+1. APERO telluric-corrected files (t.fits):
+   - File name MUST end with 't.fits'
+   - Example: NIRPS.2024-09-28T23:54:06.014t.fits
+
+2. ESO reduced files:
+   - File name MUST start with 'r.'
+   - Example: r.NIRPS.2023-08-25T01_29_54.429_S2D_BLAZE_TELL_CORR_A.fits
+
+Files that do NOT work:
   - NIRPS.2024-09-28T23:54:06.014e.fits  ← WRONG (extracted, not telluric-corrected)
   - NIRPS.2024-09-28T23:54:06.014o.fits  ← WRONG (not telluric-corrected)
 
-The 't' stands for 'telluric-corrected'. These files are produced by
-APERO after telluric correction and contain the extensions:
-  - FluxA, BlazeA, WaveA (for NIRPS)
-  - FluxAB, BlazeAB, WaveAB (for SPIROU)
-
-Please use the correct t.fits file from your APERO reduction.
+Please use a valid APERO t.fits or ESO r. file.
 {'='*70}\n""")
         exit(1)
     
-    # Auto-detect template if not provided
+    print(f"Detected file type: {file_type}")
+    
+    # Auto-detect template if not provided (only for APERO files)
     if args.template is None:
+        if file_type == 'ESO':
+            print(f"""\n{'='*70}
+ERROR: Template file required for ESO files!
+{'='*70}
+
+ESO files do not have reliable OBJECT names for template auto-detection.
+You must provide a template file explicitly:
+
+  python inspect_spectrum.py {args.file} <template.fits>
+
+{'='*70}\n""")
+            exit(1)
         try:
             args.template = find_template(args.file, args.instrument)
         except FileNotFoundError as e:
